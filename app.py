@@ -1,48 +1,44 @@
-import tkinter as tk
-from tkinter import filedialog
+import streamlit as st
 import fitz
+import os
+from io import BytesIO
 
-def split_pdf_to_a4(input_pdf, output_pdf):
-    # （前のスクリプトと同じ関数をここにコピー）
+def split_pdf_to_a4(input_pdf):
+    # A4サイズの寸法 (ポイント単位)
+    a4_width, a4_height = fitz.paper_size('a4')
 
-def open_file_dialog():
-    file_path = filedialog.askopenfilename(filetypes=[("PDF files", "*.pdf")])
-    if file_path:
-        file_entry.delete(0, tk.END)
-        file_entry.insert(0, file_path)
+    # メモリ内でPDFを操作
+    doc = fitz.open(stream=input_pdf, filetype="pdf")
+    new_doc = fitz.open()
 
-def split_pdf():
-    input_pdf = file_entry.get()
-    output_pdf = output_entry.get()
-    if input_pdf and output_pdf:
-        split_pdf_to_a4(input_pdf, output_pdf)
-        status_label.config(text="変換完了: " + output_pdf)
-    else:
-        status_label.config(text="エラー: ファイル名を入力してください")
+    for page in doc:
+        rect = page.rect
+        for y in range(int(rect.height / a4_height) + 1):
+            subrect = fitz.Rect(0, y * a4_height, a4_width, (y + 1) * a4_height)
+            new_page = new_doc.new_page(width=a4_width, height=a4_height)
+            new_page.show_pdf_page(new_page.rect, doc, page.number, clip=subrect)
 
-# GUIの設定
-root = tk.Tk()
-root.title("PDF Splitter")
+    # バイトストリームとしてPDFを保存
+    output_stream = BytesIO()
+    new_doc.save(output_stream)
+    output_stream.seek(0)
 
-# ファイル選択エントリ
-file_entry = tk.Entry(root, width=40)
-file_entry.pack()
-open_button = tk.Button(root, text="ファイルを選択", command=open_file_dialog)
-open_button.pack()
+    # ドキュメントを閉じる
+    doc.close()
+    new_doc.close()
 
-# 出力ファイル名エントリ
-output_entry = tk.Entry(root, width=40)
-output_entry.pack()
-output_label = tk.Label(root, text="出力ファイル名:")
-output_label.pack()
+    return output_stream
 
-# 分割ボタン
-split_button = tk.Button(root, text="PDFを分割", command=split_pdf)
-split_button.pack()
+# Streamlitのウェブページ設定
+st.title('PDF Splitter')
+st.write('縦長のPDFをA4サイズに分割します。')
 
-# ステータスラベル
-status_label = tk.Label(root, text="")
-status_label.pack()
-
-# GUIを開始
-root.mainloop()
+uploaded_file = st.file_uploader("PDFファイルをアップロードしてください", type="pdf")
+if uploaded_file is not None:
+    output_pdf = split_pdf_to_a4(uploaded_file)
+    st.download_button(
+        label="分割されたPDFをダウンロード",
+        data=output_pdf,
+        file_name="split_output.pdf",
+        mime="application/octet-stream"
+    )
